@@ -1,12 +1,12 @@
 import re
-from datetime import datetime,timedelta
+from datetime import datetime, timedelta
 from collections import defaultdict
 
-LOG_FILE=r"E:\defensive project 2026\logmonitor(mini siem)\logs\auth.log"
-Thresold=3
+LOG_FILE = "logs/auth.log"
 TIME_WINDOW_MINUTES = 10
+USER_THRESHOLD = 4
 
-failed_logins = defaultdict(list)
+password_usage = defaultdict(list)
 
 def parse_time(ts):
     return datetime.strptime(ts, "%Y-%m-%d %H:%M")
@@ -17,26 +17,33 @@ def monitor_logs():
 
     for line in logs:
         match = re.search(
-            r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}).*Failed password.*from ([\d.]+)",
+            r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) (\w+) Failed login using (\S+) from ([\d.]+)",
             line
         )
 
-        if match:
-            timestamp = parse_time(match.group(1))
-            ip = match.group(2)
+        if not match:
+            continue
 
-            failed_logins[ip].append(timestamp)
+        timestamp = parse_time(match.group(1))
+        user = match.group(2)
+        password = match.group(3)
 
-            # sliding window
-            window_start = timestamp - timedelta(minutes=TIME_WINDOW_MINUTES)
-            failed_logins[ip] = [
-                t for t in failed_logins[ip] if t >= window_start
-            ]
+        password_usage[password].append((timestamp, user))
 
-            if len(failed_logins[ip]) >= Thresold:
-                print(f"🚨 ALERT: Slow brute-force detected from {ip}")
-                failed_logins[ip].clear()
+        window_start = timestamp - timedelta(minutes=TIME_WINDOW_MINUTES)
+
+        # keep only recent entries
+        password_usage[password] = [
+            (t, u) for (t, u) in password_usage[password]
+            if t >= window_start
+        ]
+
+        unique_users = {u for (_, u) in password_usage[password]}
+
+        if len(unique_users) >= USER_THRESHOLD:
+            print("🚨 ALERT: Password Spraying Detected")
+            print(f"Password: {password}")
+            print(f"Users targeted: {unique_users}")
+            password_usage[password].clear()
 
 monitor_logs()
-
-
