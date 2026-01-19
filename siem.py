@@ -4,9 +4,9 @@ from collections import defaultdict
 
 LOG_FILE = "logs/auth.log"
 TIME_WINDOW_MINUTES = 10
-USER_THRESHOLD = 4
+USER_THRESHOLD = 5
 
-password_usage = defaultdict(list)
+events = defaultdict(list)
 
 def parse_time(ts):
     return datetime.strptime(ts, "%Y-%m-%d %H:%M")
@@ -17,7 +17,7 @@ def monitor_logs():
 
     for line in logs:
         match = re.search(
-            r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) (\w+) Failed login using (\S+) from ([\d.]+)",
+            r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) (\w+) (\w+) Failed authentication from ([\d.]+)",
             line
         )
 
@@ -26,24 +26,24 @@ def monitor_logs():
 
         timestamp = parse_time(match.group(1))
         user = match.group(2)
-        password = match.group(3)
+        service = match.group(3)
 
-        password_usage[password].append((timestamp, user))
+        key = (service, "Failed authentication")
+        events[key].append((timestamp, user))
 
         window_start = timestamp - timedelta(minutes=TIME_WINDOW_MINUTES)
 
-        # keep only recent entries
-        password_usage[password] = [
-            (t, u) for (t, u) in password_usage[password]
+        events[key] = [
+            (t, u) for (t, u) in events[key]
             if t >= window_start
         ]
 
-        unique_users = {u for (_, u) in password_usage[password]}
+        unique_users = {u for (_, u) in events[key]}
 
         if len(unique_users) >= USER_THRESHOLD:
             print("🚨 ALERT: Password Spraying Detected")
-            print(f"Password: {password}")
+            print(f"Service: {service}")
             print(f"Users targeted: {unique_users}")
-            password_usage[password].clear()
+            events[key].clear()
 
 monitor_logs()
